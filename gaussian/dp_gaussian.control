@@ -1,0 +1,4 @@
+comment     = 'Differentially private Gaussian noise mechanism for PostgreSQL'
+default_version = '1.0'
+module_pathname = '$libdir/dp_gaussian'
+relocatable = true
