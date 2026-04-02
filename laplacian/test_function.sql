@@ -1,7 +1,6 @@
-DROP TABLE IF EXISTS employees;
+drop table if exists employees;
 
--- Make an Employees table for testing
-CREATE TABLE Employees (
+CREATE TABLE employees (
     employee_id SERIAL PRIMARY KEY,
     name TEXT,
     department TEXT,
@@ -9,7 +8,7 @@ CREATE TABLE Employees (
     age INT
 );
 
-INSERT INTO Employees (name, department, salary, age) VALUES
+INSERT INTO employees (name, department, salary, age) VALUES
     ('Alice Johnson',  'Engineering',  95000,  34),
     ('Bob Smith',      'Engineering',  88000,  28),
     ('Carol White',    'Engineering', 102000,  41),
@@ -26,14 +25,18 @@ INSERT INTO Employees (name, department, salary, age) VALUES
     ('Noah Harris',    'Engineering',  89000,  31),
     ('Olivia Martin',  'Marketing',    74000,  39);
 
--- Execute the differentially private average salary return
-SELECT
-    department,
-    AVG(salary) AS real_avg,
-    dp_laplace_noise(
-        AVG(salary),
-        (MAX(salary) - MIN(salary)) / COUNT(*)::float8,  -- sensitivity
-        0.8                                               -- epsilon
-    ) AS private_avg
-FROM Employees
-GROUP BY department;
+
+DROP EXTENSION dp_laplace;
+CREATE EXTENSION dp_laplace;
+
+SELECT 
+--Parameters: userID, epsilon(privacy_budget), max number of rows allowed
+dp_count(employee_id, 10.0, 3) as private_num_employees,
+COUNT(*) as real_count,
+--Parameters: userID, value to sum, epsilon(privacy_budget), max number of rows allowed, max value of column
+dp_sum(employee_id, salary, 10.0, 3, 1000000) as private_sum_salary,
+SUM(salary) as real_sum_salary,
+--Parameters: userID, value to sum, epsilon(privacy_budget), max number of rows allowed, max value of column
+dp_avg(employee_id, salary, 10.0, 3, 1000000) as private_avg_salary,
+AVG(salary) as real_avg_salary
+FROM employees;
