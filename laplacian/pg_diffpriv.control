@@ -1,0 +1,3 @@
+comment = 'Differential Privacy Extension for Postgres'
+default_version = '1.0'
+relocatable = true

@@ -7,6 +7,23 @@
 
 PG_MODULE_MAGIC;
 
+//Generate gaussian(normal) noise
+static double
+generate_standard_normal(double sensitivity, double epsilon, double delta)
+{
+    double u1, u2;
+
+    /* Avoid log(0) by ensuring u1 is never zero */
+    do {
+        u1 = (double)rand() / RAND_MAX;
+    } while (u1 == 0.0);
+
+    u2 = (double)rand() / RAND_MAX;
+
+    double sigma  = sensitivity * sqrt(2.0 * log(1.25 / delta)) / epsilon;
+    return sigma * sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
+}
+
 //Generate the laplacian noise
 static double
 generate_laplace(double sensitivity, double epsilon)
@@ -37,6 +54,7 @@ typedef struct DPSumState
     int32 k;
     double epsilon;
     double max_value;
+    double delta;
 } DPSumState;
 
 //Count only needs a simpler table, as the sampling is easy
@@ -48,6 +66,7 @@ typedef struct DPCountState
     HTAB *user_htab;
     int32 k;
     double epsilon;
+    double delta;
 } DPCountState;
 
 //Make the actual hash table for user entries
@@ -109,6 +128,14 @@ dp_sum_trans(PG_FUNCTION_ARGS)
         state->epsilon = PG_GETARG_FLOAT8(3);
         state->k = PG_GETARG_INT32(4);
         state->max_value = PG_GETARG_FLOAT8(5);
+
+        //Check if the optional delta argument was provided
+        if (PG_NARGS() > 6 && !PG_ARGISNULL(6)){
+            state->delta = PG_GETARG_FLOAT8(6);
+        }
+        else{
+            state->delta = 1;
+        }
     }
     else
     {
@@ -145,10 +172,10 @@ dp_sum_trans(PG_FUNCTION_ARGS)
     PG_RETURN_POINTER(state);
 }
 
-PG_FUNCTION_INFO_V1(dp_sum_final);
+PG_FUNCTION_INFO_V1(dp_sum_laplacian_final);
 
 Datum
-dp_sum_final(PG_FUNCTION_ARGS)
+dp_sum_laplacian_final(PG_FUNCTION_ARGS)
 {
     DPSumState *state;
 
@@ -181,6 +208,40 @@ dp_sum_final(PG_FUNCTION_ARGS)
     PG_RETURN_FLOAT8(noisy);
 }
 
+PG_FUNCTION_INFO_V1(dp_sum_gaussian_final);
+
+Datum
+dp_sum_gaussian_final(PG_FUNCTION_ARGS)
+{
+    DPSumState *state;
+
+    if (PG_ARGISNULL(0))
+        PG_RETURN_NULL();
+
+    state = (DPSumState *) PG_GETARG_POINTER(0);
+
+    double total = 0.0;
+
+    HASH_SEQ_STATUS scan;
+    UserEntry *entry;
+
+    hash_seq_init(&scan, state->user_htab);
+
+    //Add up all values for the user in their reservoir
+    while ((entry = hash_seq_search(&scan)) != NULL)
+    {
+        for (int i = 0; i < entry->selected; i++)
+            total += entry->reservoir[i];
+    }
+
+    //Sensitivity depends on the max_value input and k
+    double sensitivity = state->k * state->max_value;
+
+    //Add in the noise
+    double noisy = total +  generate_standard_normal(sensitivity, state->epsilon, state->delta);
+    PG_RETURN_FLOAT8(noisy);
+}
+
 /* =========================================================
  * dp_avg
  * ========================================================= */
@@ -195,10 +256,10 @@ dp_avg_trans(PG_FUNCTION_ARGS)
     return dp_sum_trans(fcinfo);
 }
 
-PG_FUNCTION_INFO_V1(dp_avg_final);
+PG_FUNCTION_INFO_V1(dp_avg_laplacian_final);
 
 Datum
-dp_avg_final(PG_FUNCTION_ARGS)
+dp_avg_laplacian_final(PG_FUNCTION_ARGS)
 {
     DPSumState *state;
 
@@ -243,6 +304,54 @@ dp_avg_final(PG_FUNCTION_ARGS)
     PG_RETURN_FLOAT8(noisy_sum / noisy_count);
 }
 
+PG_FUNCTION_INFO_V1(dp_avg_gaussian_final);
+
+Datum
+dp_avg_gaussian_final(PG_FUNCTION_ARGS)
+{
+    DPSumState *state;
+
+    if (PG_ARGISNULL(0))
+        PG_RETURN_NULL();
+
+    state = (DPSumState *) PG_GETARG_POINTER(0);
+
+    double total = 0.0;
+    int count = 0;
+
+    HASH_SEQ_STATUS scan;
+    UserEntry *entry;
+
+    hash_seq_init(&scan, state->user_htab);
+
+    //Add up all user values in the reservoir and keep track of count
+    while ((entry = hash_seq_search(&scan)) != NULL)
+    {
+        for (int i = 0; i < entry->selected; i++)
+        {
+            total += entry->reservoir[i];
+            count++;
+        }
+    }
+
+    if (count == 0)
+        PG_RETURN_NULL();
+
+    //Calculate the sensitivity based on k and the max value
+    double sensitivity = state->k * state->max_value;
+
+    //Spend half of the budget on the sum and half on the count
+    //Both are needed to calculate the average
+    //Add in the noise
+    double noisy_sum = total +  generate_standard_normal(sensitivity, state->epsilon, state->delta);
+
+    //Add in the noise
+    double noisy_count = count +  generate_standard_normal(sensitivity, state->epsilon, state->delta);
+
+    //Sum divided by count is the average
+    PG_RETURN_FLOAT8(noisy_sum / noisy_count);
+}
+
 /* =========================================================
  * dp_count
  * ========================================================= */
@@ -265,6 +374,13 @@ dp_count_trans(PG_FUNCTION_ARGS)
         state->user_htab = create_htab(aggcontext);
         state->k = PG_GETARG_INT32(3);
         state->epsilon = PG_GETARG_FLOAT8(2);
+        //Check if the optional delta argument was provided
+        if (PG_NARGS() > 4 && !PG_ARGISNULL(4)){
+            state->delta = PG_GETARG_FLOAT8(4);
+        }
+        else{
+            state->delta = 1;
+        }
     }
     else
     {
@@ -307,12 +423,12 @@ dp_count_trans(PG_FUNCTION_ARGS)
     PG_RETURN_POINTER(state);
 }
 
-PG_FUNCTION_INFO_V1(dp_count_final);
+PG_FUNCTION_INFO_V1(dp_count_laplacian_final);
 
 //Count is a little easier than the average or sum because we don't have
 //to worry about how much each input could change the output
 Datum
-dp_count_final(PG_FUNCTION_ARGS)
+dp_count_laplacian_final(PG_FUNCTION_ARGS)
 {
     DPCountState *state;
 
@@ -341,6 +457,44 @@ dp_count_final(PG_FUNCTION_ARGS)
     //Generate the noisy output
     double noisy = total +
         generate_laplace(sensitivity, state->epsilon);
+
+    PG_RETURN_FLOAT8(noisy);
+}
+
+PG_FUNCTION_INFO_V1(dp_count_gaussian_final);
+//Count is a little easier than the average or sum because we don't have
+//to worry about how much each input could change the output
+Datum
+dp_count_gaussian_final(PG_FUNCTION_ARGS)
+{
+    DPCountState *state;
+
+    if (PG_ARGISNULL(0))
+        PG_RETURN_NULL();
+
+    state = (DPCountState *) PG_GETARG_POINTER(0);
+
+    double total = 0.0;
+
+    HASH_SEQ_STATUS scan;
+    UserEntry *entry;
+
+    hash_seq_init(&scan, state->user_htab);
+
+    //Just add up all the entries in hash table
+    while ((entry = hash_seq_search(&scan)) != NULL)
+    {
+        total += entry->selected;
+    }
+
+    //Sensitivity is just k here, each row can only 
+    //contribute a max value of one to a count function
+    double sensitivity = state->k;
+
+    //Generate the noisy output
+    //TODO
+    double noisy = total +  generate_standard_normal(sensitivity, state->epsilon, state->delta);
+
 
     PG_RETURN_FLOAT8(noisy);
 }

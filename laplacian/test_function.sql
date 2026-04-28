@@ -1,4 +1,4 @@
-drop table if exists employees;
+drop table if exists employees cascade;
 
 CREATE TABLE employees (
     employee_id SERIAL PRIMARY KEY,
@@ -25,18 +25,39 @@ INSERT INTO employees (name, department, salary, age) VALUES
     ('Noah Harris',    'Engineering',  89000,  31),
     ('Olivia Martin',  'Marketing',    74000,  39);
 
+drop table if exists orders;
 
-DROP EXTENSION dp_laplace;
-CREATE EXTENSION dp_laplace;
+CREATE TABLE orders (
+    employee_id INT,
+    order_num INT,
+    CONSTRAINT fk_orders
+        FOREIGN KEY (employee_id)
+        REFERENCES employees(employee_id)
+);
+
+truncate orders;
+
+insert into orders (employee_id, order_num) values
+	(1,1),
+	(1,2),
+	(1,3),
+	(1,4),
+	(1,5),
+	(2,1),
+	(2,2),
+	(2,3),
+(3,1),(4,1),(5,1),(6,1),(7,1),(8,1),(9,1),(10,1),(11,1),(12,1),(13,1),(14,1),(15,1);
+
+select * from employees e join orders o on e.employee_id = o.employee_id;
 
 SELECT 
 --Parameters: userID, epsilon(privacy_budget), max number of rows allowed
-dp_count(employee_id, 10.0, 3) as private_num_employees,
+dp_gaussian_count(e.employee_id, 10.0, 1, 0.5) as private_num_employees,
 COUNT(*) as real_count,
 --Parameters: userID, value to sum, epsilon(privacy_budget), max number of rows allowed, max value of column
-dp_sum(employee_id, salary, 10.0, 3, 1000000) as private_sum_salary,
+dp_gaussian_sum(e.employee_id, salary, 100.0, 1, 1000000, 0.5) as private_sum_salary,
 SUM(salary) as real_sum_salary,
 --Parameters: userID, value to sum, epsilon(privacy_budget), max number of rows allowed, max value of column
-dp_avg(employee_id, salary, 10.0, 3, 1000000) as private_avg_salary,
+dp_gaussian_avg(e.employee_id, salary, 100.0, 1, 1000000, 0.5) as private_avg_salary,
 AVG(salary) as real_avg_salary
-FROM employees;
+FROM employees e join orders o on e.employee_id = o.employee_id;
