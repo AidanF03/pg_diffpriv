@@ -50,14 +50,24 @@ insert into orders (employee_id, order_num) values
 
 select * from employees e join orders o on e.employee_id = o.employee_id;
 
+DELETE FROM diffpriv.budget_alerts;
+DELETE FROM diffpriv.query_log;
+DELETE FROM diffpriv.analysts;
+ALTER SEQUENCE diffpriv.analysts_analyst_id_seq RESTART WITH 1;
+ALTER SEQUENCE diffpriv.query_log_log_id_seq RESTART WITH 1;
+
+SELECT diffpriv.register_analyst('analyst_laplace',  2.0);  -- analyst_id=1, uses Laplace
+select diffpriv.update_budget(1, 1000.0);
+select diffpriv.get_remaining_budget(1);
+select diffpriv.reset_budget(1);
 SELECT 
---Parameters: userID, epsilon(privacy_budget), max number of rows allowed
-dp_gaussian_count(e.employee_id, 10.0, 1, 0.5) as private_num_employees,
+--Parameters: analystID, primary key column, epsilon(privacy_budget), max number of rows allowed, (delta)
+dp_laplacian_count(1, e.employee_id, 10.0, 1) as private_num_employees,
 COUNT(*) as real_count,
---Parameters: userID, value to sum, epsilon(privacy_budget), max number of rows allowed, max value of column
-dp_gaussian_sum(e.employee_id, salary, 100.0, 1, 1000000, 0.5) as private_sum_salary,
+--Parameters: analystID, primary key column, value to sum, epsilon(privacy_budget), max number of rows allowed, max value of column, (delta)
+dp_laplacian_sum(1, e.employee_id, salary, 100.0, 1, 1000000) as private_sum_salary,
 SUM(salary) as real_sum_salary,
---Parameters: userID, value to sum, epsilon(privacy_budget), max number of rows allowed, max value of column
-dp_gaussian_avg(e.employee_id, salary, 100.0, 1, 1000000, 0.5) as private_avg_salary,
+--Parameters: analystID, primary key column, value to sum, epsilon(privacy_budget), max number of rows allowed, max value of column, (delta)
+dp_laplacian_avg(1, e.employee_id, salary, 100.0, 1, 1000000) as private_avg_salary,
 AVG(salary) as real_avg_salary
 FROM employees e join orders o on e.employee_id = o.employee_id;
