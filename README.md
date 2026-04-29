@@ -40,7 +40,9 @@ Once you have created these 4 files, you will run `make` and then `sudo make ins
 
 ## Use extension
 
-This extension can be tested by using the test_function.sql file on a local Postgres database. This will create a table, populate it with test data, and then try out the extension function. You should have values close to the average of the salaries returned. Adjust the sensitivity and epsilon values to get a larger or smaller spread to ensure more or less privacy.
+Before using the extension, run the privacy_budget.sql file to build the necessary implements of the privacy tracker.
+
+After this, the extension can be tested by using the test_function.sql file on a local Postgres database. This will create a table, populate it with test data, and then try out the extension function. You should have values close to the average of the salaries returned. Adjust the sensitivity and epsilon values to get a larger or smaller spread to ensure more or less privacy.
 
 ## Troubleshooting
 I am on a Mac, so these are Mac related troubleshooting issues.
