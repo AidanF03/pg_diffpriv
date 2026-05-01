@@ -128,8 +128,8 @@ CREATE SCHEMA IF NOT EXISTS diffpriv;
 CREATE TABLE IF NOT EXISTS diffpriv.analysts (
     analyst_id   SERIAL PRIMARY KEY,
     analyst_name VARCHAR(100) NOT NULL UNIQUE,
-    total_budget NUMERIC(10,6) NOT NULL CHECK (total_budget > 0),
-    budget_used  NUMERIC(10,6) NOT NULL DEFAULT 0.0 CHECK (budget_used >= 0),
+    total_budget NUMERIC(20,6) NOT NULL CHECK (total_budget > 0),
+    budget_used  NUMERIC(20,6) NOT NULL DEFAULT 0.0 CHECK (budget_used >= 0),
     created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     is_active    BOOLEAN NOT NULL DEFAULT TRUE,
     CONSTRAINT budget_not_exceeded CHECK (budget_used <= total_budget)
@@ -147,8 +147,8 @@ CREATE TABLE IF NOT EXISTS diffpriv.query_log (
     mechanism     VARCHAR(20) NOT NULL CHECK (mechanism IN ('laplace','gaussian')),
     sensitivity   NUMERIC(20,6) NOT NULL CHECK (sensitivity > 0),
     query_time    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    budget_before NUMERIC(10,6) NOT NULL,
-    budget_after  NUMERIC(10,6) NOT NULL,
+    budget_before NUMERIC(20,6) NOT NULL,
+    budget_after  NUMERIC(20,6) NOT NULL,
     approved      BOOLEAN NOT NULL DEFAULT TRUE,
     notes         TEXT
 );
@@ -162,14 +162,14 @@ CREATE TABLE IF NOT EXISTS diffpriv.budget_alerts (
     analyst_id   INTEGER NOT NULL REFERENCES diffpriv.analysts(analyst_id),
     alert_type   VARCHAR(30) NOT NULL,
     triggered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    budget_used  NUMERIC(10,6) NOT NULL,
-    total_budget NUMERIC(10,6) NOT NULL
+    budget_used  NUMERIC(20,6) NOT NULL,
+    total_budget NUMERIC(20,6) NOT NULL
 );
 
 -- Adds a new analyst with a specified total epsilon budget.
 CREATE OR REPLACE FUNCTION diffpriv.register_analyst(
     p_name   VARCHAR(100),
-    p_budget NUMERIC(10,6)
+    p_budget NUMERIC(20,6)
 )
 RETURNS INTEGER
 LANGUAGE plpgsql AS $$
@@ -188,9 +188,9 @@ $$;
 
 -- Returns remaining epsilon for an analyst.
 CREATE OR REPLACE FUNCTION diffpriv.get_remaining_budget(p_analyst_id INTEGER)
-RETURNS NUMERIC(10,6)
+RETURNS NUMERIC(20,6)
 LANGUAGE plpgsql AS $$
-DECLARE v_remaining NUMERIC(10,6);
+DECLARE v_remaining NUMERIC(20,6);
 BEGIN
     SELECT total_budget - budget_used INTO v_remaining
     FROM diffpriv.analysts
@@ -206,7 +206,7 @@ $$;
 -- Returns TRUE if the analyst can afford p_epsilon (dry run).
 CREATE OR REPLACE FUNCTION diffpriv.check_budget(
     p_analyst_id INTEGER,
-    p_epsilon    NUMERIC(10,6)
+    p_epsilon    NUMERIC(20,6)
 )
 RETURNS BOOLEAN
 LANGUAGE plpgsql AS $$
@@ -218,8 +218,8 @@ $$;
 -- Internally used function that inserts threshold warnings into budget_alerts.
 CREATE OR REPLACE FUNCTION diffpriv._raise_budget_alert(
     p_analyst_id INTEGER,
-    p_used       NUMERIC(10,6),
-    p_total      NUMERIC(10,6)
+    p_used       NUMERIC(20,6),
+    p_total      NUMERIC(20,6)
 )
 RETURNS VOID
 LANGUAGE plpgsql AS $$
@@ -265,17 +265,17 @@ $$;
 CREATE OR REPLACE FUNCTION diffpriv.spend_budget(
     p_analyst_id  INTEGER,
     p_query_text  TEXT,
-    p_epsilon     NUMERIC(10,6),
+    p_epsilon     NUMERIC(20,6),
     p_mechanism   VARCHAR(20),
-    p_sensitivity NUMERIC(10,6),
+    p_sensitivity NUMERIC(20,6),
     p_notes       TEXT DEFAULT NULL
 )
 RETURNS INTEGER
 LANGUAGE plpgsql AS $$
 DECLARE
     v_analyst      diffpriv.analysts%ROWTYPE;
-    v_remaining    NUMERIC(10,6);
-    v_budget_after NUMERIC(10,6);
+    v_remaining    NUMERIC(20,6);
+    v_budget_after NUMERIC(20,6);
     v_log_id       INTEGER;
 BEGIN
     -- Epsilon needs to be positive
@@ -360,7 +360,7 @@ CREATE OR REPLACE FUNCTION diffpriv.reset_budget(
 )
 RETURNS VOID
 LANGUAGE plpgsql AS $$
-DECLARE v_prev_used NUMERIC(10,6);
+DECLARE v_prev_used NUMERIC(20,6);
 BEGIN
     SELECT budget_used INTO v_prev_used
     FROM diffpriv.analysts WHERE analyst_id = p_analyst_id;
@@ -389,11 +389,11 @@ $$;
 -- Adjusts total_budget for an analyst.
 CREATE OR REPLACE FUNCTION diffpriv.update_budget(
     p_analyst_id INTEGER,
-    p_new_budget NUMERIC(10,6)
+    p_new_budget NUMERIC(20,6)
 )
 RETURNS VOID
 LANGUAGE plpgsql AS $$
-DECLARE v_used NUMERIC(10,6);
+DECLARE v_used NUMERIC(20,6);
 BEGIN
     SELECT budget_used INTO v_used
     FROM diffpriv.analysts WHERE analyst_id = p_analyst_id;
