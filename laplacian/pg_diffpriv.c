@@ -70,7 +70,7 @@ generate_standard_normal(double sensitivity, double epsilon, double delta)
     //Use random() to get a random value
     u2 = (double)random() / RAND_MAX;
 
-    //Calculate the noise based on the sensitivity, epsilon, and delat
+    //Calculate the noise based on the sensitivity, epsilon, and delta
     double sigma  = sensitivity * sqrt(2.0 * log(1.25 / delta)) / epsilon;
     return sigma * sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
 }
@@ -189,7 +189,7 @@ Datum
 dp_sum_trans(PG_FUNCTION_ARGS)
 {
     MemoryContext aggcontext;
-    DpSumAverageState *state;
+    DPSumAverageState *state;
 
     if (!AggCheckCallContext(fcinfo, &aggcontext))
         elog(ERROR, "dp_sum_trans called outside aggregate context");
@@ -197,7 +197,7 @@ dp_sum_trans(PG_FUNCTION_ARGS)
     //Set up the arguments for use
     if (PG_ARGISNULL(0))
     {
-        state = (DpSumAverageState *) MemoryContextAllocZero(aggcontext, sizeof(DpSumAverageState));
+        state = (DPSumAverageState *) MemoryContextAllocZero(aggcontext, sizeof(DPSumAverageState));
         state->user_htab = create_htab(aggcontext);
         state->epsilon = PG_GETARG_FLOAT8(4);
         state->k = PG_GETARG_INT32(5);
@@ -214,7 +214,7 @@ dp_sum_trans(PG_FUNCTION_ARGS)
     }
     else
     {
-        state = (DpSumAverageState *) PG_GETARG_POINTER(0);
+        state = (DPSumAverageState *) PG_GETARG_POINTER(0);
     }
 
     if (PG_ARGISNULL(1) || PG_ARGISNULL(2))
@@ -256,12 +256,12 @@ PG_FUNCTION_INFO_V1(dp_sum_laplacian_final);
 Datum
 dp_sum_laplacian_final(PG_FUNCTION_ARGS)
 {
-    DpSumAverageState *state;
+    DPSumAverageState *state;
 
     if (PG_ARGISNULL(0))
         PG_RETURN_NULL();
 
-    state = (DpSumAverageState *) PG_GETARG_POINTER(0);
+    state = (DPSumAverageState *) PG_GETARG_POINTER(0);
 
     double total = 0.0;
 
@@ -298,12 +298,12 @@ PG_FUNCTION_INFO_V1(dp_sum_gaussian_final);
 Datum
 dp_sum_gaussian_final(PG_FUNCTION_ARGS)
 {
-    DpSumAverageState *state;
+    DPSumAverageState *state;
 
     if (PG_ARGISNULL(0))
         PG_RETURN_NULL();
 
-    state = (DpSumAverageState *) PG_GETARG_POINTER(0);
+    state = (DPSumAverageState *) PG_GETARG_POINTER(0);
 
     double total = 0.0;
 
@@ -349,12 +349,12 @@ PG_FUNCTION_INFO_V1(dp_avg_laplacian_final);
 Datum
 dp_avg_laplacian_final(PG_FUNCTION_ARGS)
 {
-    DpSumAverageState *state;
+    DPSumAverageState *state;
 
     if (PG_ARGISNULL(0))
         PG_RETURN_NULL();
 
-    state = (DpSumAverageState *) PG_GETARG_POINTER(0);
+    state = (DPSumAverageState *) PG_GETARG_POINTER(0);
 
     double total = 0.0;
     int count = 0;
@@ -402,12 +402,12 @@ PG_FUNCTION_INFO_V1(dp_avg_gaussian_final);
 Datum
 dp_avg_gaussian_final(PG_FUNCTION_ARGS)
 {
-    DpSumAverageState *state;
+    DPSumAverageState *state;
 
     if (PG_ARGISNULL(0))
         PG_RETURN_NULL();
 
-    state = (DpSumAverageState *) PG_GETARG_POINTER(0);
+    state = (DPSumAverageState *) PG_GETARG_POINTER(0);
 
     double total = 0.0;
     int count = 0;
