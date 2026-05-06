@@ -20,10 +20,10 @@ BASE = """
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: system-ui, sans-serif; background: #f5f5f0; color: #1a1a1a; font-size: 15px; }
-  nav { background: #1a1a1a; color: #fff; padding: 0 2rem; display: flex; gap: 2rem; align-items: center; height: 52px; }
+  nav { background: #1a1a1a; color: #fff; padding: 0 2rem; padding-right: 14rem; display: flex; justify-content: center; gap: 2rem; align-items: center; height: 52px; }
   nav a { color: #ccc; text-decoration: none; font-size: 14px; }
   nav a:hover, nav a.active { color: #fff; }
-  nav .brand { color: #fff; font-weight: 600; font-size: 15px; margin-right: 1rem; }
+  nav .brand { color: #DC143C; font-weight: 600; font-size: 15px; margin-right: 1rem; }
   main { max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
   h1 { font-size: 20px; font-weight: 600; margin-bottom: 1.5rem; }
   h2 { font-size: 16px; font-weight: 600; margin-bottom: 1rem; }
@@ -253,11 +253,12 @@ def query():
             analyst_id = int(request.form["analyst_id"])
             table = request.form["table"].strip()
             where = request.form.get("where", "").strip() or None
+            pk_col = request.form.get("pk_col", "").strip()
+            k = int(request.form.get("k", 1) or 1)
             epsilon = float(request.form["epsilon"])
             mechanism = request.form["mechanism"]
             query_type = request.form["query_type"]
             column = request.form.get("column", "").strip() or None
-            col_min = request.form.get("col_min", "").strip()
             col_max = request.form.get("col_max", "").strip()
             delta = float(request.form.get("delta", 0) or 0)
 
@@ -267,51 +268,54 @@ def query():
             if query_type == "count":
                 if mechanism == "laplace":
                     cur.execute(
-                        f"SELECT dp_laplacian_count(%s, %s, %s, 10) FROM {table}" +
+                        f"SELECT dp_laplacian_count(%s, t.{pk_col}, %s, %s) FROM {table} t" +
                         (f" WHERE {where}" if where else ""),
-                        (analyst_id, analyst_id, epsilon)
+                        (analyst_id, epsilon, k)
                     )
                 else:
                     cur.execute(
-                        f"SELECT dp_gaussian_count(%s, %s, %s, 10, %s) FROM {table}" +
+                        f"SELECT dp_gaussian_count(%s, t.{pk_col}, %s, %s, %s) FROM {table} t" +
                         (f" WHERE {where}" if where else ""),
-                        (analyst_id, analyst_id, epsilon, delta)
+                        (analyst_id, epsilon, k, delta)
                     )
             elif query_type in ("sum", "avg"):
-                if not column or not col_min or not col_max:
-                    flash("Column, min, and max are required for sum/avg.", "error")
+                if not column or not col_max:
+                    flash("Column and max are required for sum/avg.", "error")
                     return redirect(url_for("query"))
-                col_min = float(col_min); col_max = float(col_max)
+                col_max = float(col_max)
                 if query_type == "sum":
                     fn = "dp_laplacian_sum" if mechanism == "laplace" else "dp_gaussian_sum"
                     if mechanism == "laplace":
                         cur.execute(
-                            f"SELECT {fn}(%s, %s, {column}, %s, 10, %s) FROM {table}" +
+                            f"SELECT {fn}(%s, t.{pk_col}, t.{column}, %s, %s, %s) FROM {table} t" +
                             (f" WHERE {where}" if where else ""),
-                            (analyst_id, analyst_id, epsilon, col_max)
+                            (analyst_id, epsilon, k, col_max)
                         )
                     else:
                         cur.execute(
-                            f"SELECT {fn}(%s, %s, {column}, %s, 10, %s, %s) FROM {table}" +
+                            f"SELECT {fn}(%s, t.{pk_col}, t.{column}, %s, %s, %s, %s) FROM {table} t" +
                             (f" WHERE {where}" if where else ""),
-                            (analyst_id, analyst_id, epsilon, col_max, delta)
+                            (analyst_id, epsilon, k, col_max, delta)
                         )
                 else:
                     fn = "dp_laplacian_avg" if mechanism == "laplace" else "dp_gaussian_avg"
                     if mechanism == "laplace":
                         cur.execute(
-                            f"SELECT {fn}(%s, %s, {column}, %s, 10, %s) FROM {table}" +
+                            f"SELECT {fn}(%s, t.{pk_col}, t.{column}, %s, %s, %s) FROM {table} t" +
                             (f" WHERE {where}" if where else ""),
-                            (analyst_id, analyst_id, epsilon, col_max)
+                            (analyst_id, epsilon, k, col_max)
                         )
                     else:
                         cur.execute(
-                            f"SELECT {fn}(%s, %s, {column}, %s, 10, %s, %s) FROM {table}" +
+                            f"SELECT {fn}(%s, t.{pk_col}, t.{column}, %s, %s, %s, %s) FROM {table} t" +
                             (f" WHERE {where}" if where else ""),
-                            (analyst_id, analyst_id, epsilon, col_max, delta)
+                            (analyst_id, epsilon, k, col_max, delta)
                         )
 
             val = cur.fetchone()[0]
+            cur.execute("SELECT analyst_name FROM diffpriv.analysts WHERE analyst_id = %s", (analyst_id,))
+            name_row = cur.fetchone()
+            analyst_name = name_row[0] if name_row else str(analyst_id)
             conn.commit(); cur.close(); conn.close()
 
             result_html = f"""
@@ -326,16 +330,34 @@ def query():
               </div>
             </div>
             """
-            flash(f"Query approved. Epsilon {epsilon} deducted from analyst {analyst_id}.", "success")
+            flash(f"Query approved. Epsilon {epsilon} deducted from {analyst_name}.", "success")
 
         except Exception as e:
             err = str(e)
-            if "Budget exceeded" in err and "Remaining=" in err:
+            if "Budget exceeded" in err:
                 import re
                 requested = re.search(r"Requested=([\d.]+)", err)
                 remaining = re.search(r"Remaining=([\d.]+)", err)
                 req_val = requested.group(1) if requested else "?"
                 rem_val = remaining.group(1) if remaining else "0"
+                try:
+                    _analyst_id = int(request.form.get("analyst_id", 0))
+                    _epsilon = float(request.form.get("epsilon", 0) or 0)
+                    _mechanism = request.form.get("mechanism", "")
+                    _query_type = request.form.get("query_type", "")
+                    _table = request.form.get("table", "").strip()
+                    rconn = get_conn()
+                    rcur = rconn.cursor()
+                    q_text = f"dp_{_mechanism}_{_query_type} on {_table}"
+                    notes = f"Budget exceeded: requested={req_val}, remaining={rem_val}"
+                    rcur.execute(
+                        """INSERT INTO diffpriv.query_log (analyst_id, query_text, epsilon_spent, mechanism, sensitivity, budget_before, budget_after, approved, notes)
+                           SELECT %s, %s, %s, %s, 1.0, budget_used, budget_used, FALSE, %s FROM diffpriv.analysts WHERE analyst_id = %s""",
+                        (_analyst_id, q_text, _epsilon, _mechanism, notes, _analyst_id)
+                    )
+                    rconn.commit(); rcur.close(); rconn.close()
+                except Exception:
+                    pass
                 flash(f"Query rejected: budget exhausted. Requested ε={req_val}, remaining ε={rem_val}. No epsilon was deducted.", "error")
             else:
                 flash(f"Query failed: {err.split('CONTEXT')[0].strip()}", "error")
@@ -372,28 +394,32 @@ def query():
         <div class="grid2">
           <div>
             <label>Table <small>(schema.table or just table)</small></label>
-            <input type="text" name="table" placeholder="e.g. diffpriv.analysts" required>
+            <input type="text" name="table" placeholder="e.g. employees" required>
           </div>
           <div>
             <label>WHERE clause <small>(optional)</small></label>
             <input type="text" name="where" placeholder="e.g. is_active = TRUE">
           </div>
         </div>
+        <div class="grid2">
+          <div>
+            <label>Primary key column</label>
+            <input type="text" name="pk_col" placeholder="e.g. employee_id" required>
+          </div>
+          <div>
+            <label>Max rows per user (k)</label>
+            <input type="number" name="k" min="1" value="1" required>
+          </div>
+        </div>
         <div id="extra-fields" style="display:none">
           <div class="grid2">
             <div>
               <label>Column name</label>
-              <input type="text" name="column" placeholder="e.g. total_budget">
+              <input type="text" name="column" placeholder="e.g. salary">
             </div>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px">
-              <div>
-                <label>Column min</label>
-                <input type="number" name="col_min" step="any" placeholder="0">
-              </div>
-              <div>
-                <label>Column max</label>
-                <input type="number" name="col_max" step="any" placeholder="1000">
-              </div>
+            <div>
+              <label>Max column value (e.g. 200000 for salary)</label>
+              <input type="number" name="col_max" step="any" placeholder="e.g. 200000">
             </div>
           </div>
         </div>
